@@ -78,7 +78,10 @@ Imports:
     leaflet.extras,
     plotly,
     remotes,
-    writexl
+    writexl,
+    urltools,
+    geojsonsf,
+    tibble
 Depends: 
     R (>= 3.5.0)
 Suggests: 
