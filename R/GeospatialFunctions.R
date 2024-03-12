@@ -26,29 +26,30 @@
 
 TADA_MakeSpatial <- function(data, crs = 4326){
   
-  # must have all columns needed to make spatial
-  if (!"LongitudeMeasure" %in% colnames(data) & !"LatitudeMeasure" %in% colnames(data)) {
-    stop("The dataframe does not contain WQP-style latitude and longitude data (column names `HorizontalCoordinateReferenceSystemDatumName`, `LatitudeMeasure` and LongitudeMeasure` or `TADA.LongitudeMeasure` and `TADA.LatitudeMeasures`.")
+  if(!"LongitudeMeasure" %in% colnames(data) |
+     !"LatitudeMeasure" %in% colnames(data) |
+     !"HorizontalCoordinateReferenceSystemDatumName" %in% colnames(data)) {
+    stop("The dataframe does not contain WQP-style latitude and longitude data (column names `HorizontalCoordinateReferenceSystemDatumName`, `LatitudeMeasure`, and `LongitudeMeasure`.")
   } else if (!is.null(data) & inherits(data, "sf")) { stop("Your data is already a spatial object.")
   }
   
-  # Make a reference table for CRS and EPSG codes
-  epsg_codes <- tribble(
-    ~ HorizontalCoordinateReferenceSystemDatumName, ~ epsg,
-    "NAD83", 4269,
-    "WGS84", 4326,
-    "NAD27", 4267,
-    # For now assume these are WGS84. USGS has done this, too. 
-    "UNKWN", 4326,
-    "OTHER", 4326,
-    "OLDHI", 4135
-  )
-  
   suppressMessages(suppressWarnings({
+    
+    # Make a reference table for CRS and EPSG codes
+    epsg_codes <- tidyr::tribble(
+      ~ HorizontalCoordinateReferenceSystemDatumName, ~ epsg,
+      "NAD83", 4269,
+      "WGS84", 4326,
+      "NAD27", 4267,
+      "UNKWN", 4326,
+      "OTHER", 4326,
+      "OLDHI", 4135
+    )
+    
     # join our CRS reference table to our original WQP dataframe:
     sf <- data %>%
-      mutate(lat = as.numeric(LatitudeMeasure),
-             lon = as.numeric(LongitudeMeasure)) %>%
+      dplyr::mutate(lat = as.numeric(LatitudeMeasure),
+                    lon = as.numeric(LongitudeMeasure)) %>%
       # Add EPSG codes
       dplyr::left_join(x = .,
                        y = epsg_codes,
@@ -100,10 +101,14 @@ fetchATTAINS <- function(data, type = NULL) {
   }
   
   # If data is already spatial, just make sure it is in the right CRS
-  # and add an index as the WQP observations' unique IDs...
+  # and add an index as the WQP observations' unique identifier...
   if (!is.null(data) & inherits(data, "sf")) {
-    data <- data %>%
-      sf::st_transform(4326) 
+    if(sf::st_crs(data)$epsg != 4326){
+      data <- data %>%
+        sf::st_transform(4326)
+    } else {
+      data <- data 
+    }
   } else {
     # ... Otherwise transform into a spatial object then do the same thing:
     data <- data %>%
@@ -126,22 +131,26 @@ fetchATTAINS <- function(data, type = NULL) {
     baseurl <-  "https://gispub.epa.gov/arcgis/rest/services/OW/ATTAINS_Assessment/MapServer/2/query?"
   }
   
-  #starting at feature 1 (i.e., no offset):
+  # starting at feature 1 (i.e., no offset):
   offset <- 0 
   # empty list to store all features in
   all_features <- list()
   
   # EPSG we want our ATTAINS data to be in (always 4326 for this function)
-  epsg <- sf::st_crs(data)$epsg
+  epsg <- 4326
   
   # bounding box (with some minor wiggle) of user's WQP data
-  suppressMessages(suppressWarnings({bbox <- data %>% 
-    sf::st_buffer(0.001) %>% 
-    sf::st_bbox(data) %>%
-    # convert bounding box to characters
-    toString(.) %>% 
-    # encode for use within the API URL
-    urltools::url_encode(.)}))
+  suppressMessages(suppressWarnings({
+    
+    bbox <- data %>% 
+      sf::st_buffer(0.001) %>% 
+      sf::st_bbox(data) %>%
+      # convert bounding box to characters
+      toString(.) %>% 
+      # encode for use within the API URL
+      urltools::url_encode(.)
+    
+  }))
   
   # The ATTAINS API has a limit of 2000 features that can be pulled in at once.
   # Therefore, we must split the call into manageable "chunks" using a moving
@@ -191,7 +200,7 @@ fetchATTAINS <- function(data, type = NULL) {
     
   }
   
-  all_features <- bind_rows(all_features)
+  all_features <- dplyr::bind_rows(all_features)
   
   return(all_features)
   
@@ -255,9 +264,15 @@ TADA_GetATTAINS <- function(data, return = FALSE){
     # If data is already spatial, just make sure it is in the right CRS
     # and add an index as the WQP observations' unique IDs...
     if (!is.null(data) & inherits(data, "sf")) {
-      TADA_DataRetrieval_data <- data %>%
-        sf::st_transform(4326) %>%
-        tibble::rowid_to_column(var = "index")
+      if(sf::st_crs(data)$epsg != 4326){
+        TADA_DataRetrieval_data <- data %>%
+          sf::st_transform(4326) %>%
+          tibble::rowid_to_column(var = "index")
+      } else {
+        TADA_DataRetrieval_data <- data %>%
+          tibble::rowid_to_column(var = "index")
+      }
+      
     } else {
       # ... Otherwise transform into a spatial object then do the same thing:
       TADA_DataRetrieval_data <- data %>%
@@ -327,16 +342,15 @@ TADA_GetATTAINS <- function(data, return = FALSE){
               # subset to only ATTAINS point features in the same NHD HR catchments as WQP observations
               .[nearby_catchments,] %>%
               # make sure no duplicate features exist
-              distinct(assessmentunitidentifier, .keep_all = TRUE),
+              dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
             silent = TRUE)
-        
         
         # LINE FEATURES - try to pull line AU data if it exists. Otherwise, move on...
         try(ATTAINS_lines <<- fetchATTAINS(type = "lines", data = TADA_DataRetrieval_data) %>%
               # subset to only ATTAINS line features in the same NHD HR catchments as WQP observations
               .[nearby_catchments,] %>%
               # make sure no duplicate line features exist
-              distinct(assessmentunitidentifier, .keep_all = TRUE),
+              dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
             silent = TRUE)
         
         # POLYGON FEATURES - try to pull polygon AU data if it exists. Otherwise, move on...
@@ -344,7 +358,7 @@ TADA_GetATTAINS <- function(data, return = FALSE){
               # subset to only ATTAINS polygon features in the same NHD HR catchments as WQP observations
               .[nearby_catchments,] %>%
               # make sure no duplicate polygon features exist
-              distinct(assessmentunitidentifier, .keep_all = TRUE),
+              dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
             silent = TRUE)
       }
       
@@ -384,6 +398,19 @@ TADA_GetATTAINS <- function(data, return = FALSE){
 TADA_ViewATTAINS <- function(data){
   
   if(nrow(data) == 0){stop("Your WQP dataframe has no observations.")}
+  
+  if(!"LongitudeMeasure" %in% colnames(data) |
+     !"LatitudeMeasure" %in% colnames(data) |
+     !"HorizontalCoordinateReferenceSystemDatumName" %in% colnames(data) |
+     !"CharacteristicName" %in% colnames(data) |
+     !"MonitoringLocationIdentifier" %in% colnames(data) |
+     !"MonitoringLocationName" %in% colnames(data) |
+     !"ResultIdentifier" %in% colnames(data) |
+     !"ActivityStartDate" %in% colnames(data) |
+     !"OrganizationIdentifier" %in% colnames(data)) {
+    
+    stop("The dataframe does not contain WQP-style column names.")
+  }
   
   suppressMessages(suppressWarnings({
     
@@ -437,8 +464,8 @@ TADA_ViewATTAINS <- function(data){
           .[nearby_catchments,],
         silent = TRUE)
     try(points_mapper <- points %>%
-          left_join(., colors, by = "overallstatus") %>%
-          mutate(type = "Point Feature"),
+          dplyr::left_join(., colors, by = "overallstatus") %>%
+          dplyr::mutate(type = "Point Feature"),
         silent = TRUE)
     
     # LINE FEATURES - try to pull line AU data if it exists. Otherwise, move on...
@@ -447,8 +474,8 @@ TADA_ViewATTAINS <- function(data){
           .[nearby_catchments,],
         silent = TRUE)
     try(lines_mapper <- lines %>%
-          left_join(., colors, by = "overallstatus") %>%
-          mutate(type = "Line Feature"),
+          dplyr::left_join(., colors, by = "overallstatus") %>%
+          dplyr::mutate(type = "Line Feature"),
         silent = TRUE)
     
     # POLYGON FEATURES - try to pull polygon AU data if it exists. Otherwise, move on...
@@ -457,27 +484,21 @@ TADA_ViewATTAINS <- function(data){
           .[nearby_catchments,],
         silent = TRUE)
     try(polygons_mapper <- polygons %>%
-          left_join(., colors, by = "overallstatus") %>%
-          mutate(type = "Polygon Feature"),
+          dplyr::left_join(., colors, by = "overallstatus") %>%
+          dplyr::mutate(type = "Polygon Feature"),
         silent = TRUE)
     
-    # Rename WQP columns, depending on whether or not the user applied TADA's autoclean to the df:
-    try(TADA_with_ATTAINS <- TADA_with_ATTAINS %>%
-          rename(TADA.LatitudeMeasure = LatitudeMeasure,
-                 TADA.LongitudeMeasure = LongitudeMeasure,
-                 TADA.CharacteristicName = CharacteristicName), 
-        silent = TRUE)
     # Develop WQP site stats (e.g. count of observations, parameters, per site)
     sumdat <- TADA_with_ATTAINS %>%
-      dplyr::group_by(MonitoringLocationIdentifier, MonitoringLocationName, TADA.LatitudeMeasure, TADA.LongitudeMeasure) %>% 
+      dplyr::group_by(MonitoringLocationIdentifier, MonitoringLocationName, LatitudeMeasure, LongitudeMeasure) %>% 
       dplyr::summarize(Sample_Count = length(unique(ResultIdentifier)), 
                        Visit_Count = length(unique(ActivityStartDate)), 
-                       Parameter_Count = length(unique(TADA.CharacteristicName)), 
+                       Parameter_Count = length(unique(CharacteristicName)), 
                        Organization_Count = length(unique(OrganizationIdentifier)),
                        ATTAINS_AUs = as.character(list(unique(ATTAINS.assessmentunitidentifier)))) %>%
-      mutate(ATTAINS_AUs = ifelse(is.na(ATTAINS_AUs), "None", ATTAINS_AUs),
-             TADA.LatitudeMeasure = as.numeric(TADA.LatitudeMeasure),
-             TADA.LongitudeMeasure = as.numeric(TADA.LongitudeMeasure))
+      dplyr::mutate(ATTAINS_AUs = ifelse(is.na(ATTAINS_AUs), "None", ATTAINS_AUs),
+                    LatitudeMeasure = as.numeric(LatitudeMeasure),
+                    LongitudeMeasure = as.numeric(LongitudeMeasure))
     
     # Basemap for AOI:
     map <- leaflet::leaflet() %>% 
@@ -486,10 +507,10 @@ TADA_ViewATTAINS <- function(data){
                                 options = leaflet::providerTileOptions(updateWhenZooming = FALSE, 
                                                                        updateWhenIdle = TRUE)) %>% 
       leaflet::clearShapes() %>% 
-      leaflet::fitBounds(lng1 = min(sumdat$TADA.LongitudeMeasure), 
-                         lat1 = min(sumdat$TADA.LatitudeMeasure), 
-                         lng2 = max(sumdat$TADA.LongitudeMeasure), 
-                         lat2 = max(sumdat$TADA.LatitudeMeasure)) %>% 
+      leaflet::fitBounds(lng1 = min(sumdat$LongitudeMeasure), 
+                         lat1 = min(sumdat$LatitudeMeasure), 
+                         lng2 = max(sumdat$LongitudeMeasure), 
+                         lat2 = max(sumdat$LatitudeMeasure)) %>% 
       leaflet.extras::addResetMapButton()  %>%
       leaflet::addLegend(position = "bottomright",
                          colors = c("#DC851E", "#059FA4", "#A1A522", "black", NA),
@@ -547,7 +568,7 @@ TADA_ViewATTAINS <- function(data){
     # Add WQP observation features (should always exist):
     try(map <- map %>%
           leaflet::addCircleMarkers(data = sumdat, 
-                                    lng = ~sumdat$TADA.LongitudeMeasure, lat = ~sumdat$TADA.LatitudeMeasure, 
+                                    lng = ~LongitudeMeasure, lat = ~LatitudeMeasure, 
                                     color = "grey", fillColor = "black", 
                                     fillOpacity = 0.8, stroke = TRUE, weight = 1.5, radius = 6, 
                                     popup = paste0("Site ID: ", sumdat$MonitoringLocationIdentifier, 
