@@ -162,7 +162,7 @@ fetchATTAINS <- function(data, type = NULL) {
     query <- urltools::param_set(baseurl, key = "geometry", value = bbox) %>%
       urltools::param_set(key = "inSR", value = epsg) %>%
       # Total of 2000 features at a time...
-      urltools::param_set(key = "resultRecordCount", value = 2000) %>%
+      urltools::param_set(key = "resultRecordCount", value = 500) %>%
       # ... starting at the "offset":
       urltools::param_set(key = "resultOffset", value = offset) %>%
       urltools::param_set(key = "spatialRel", value = "esriSpatialRelIntersects") %>%
@@ -194,7 +194,7 @@ fetchATTAINS <- function(data, type = NULL) {
     
     all_features <- c(all_features, list(features))
     # once done, change offset by 2000 features:
-    offset <- offset + 2000
+    offset <- offset + 500
     
     if(offset == 4000){print("Your TADA data covers a large spatial range. The ATTAINS pull may take a while.")}
     
@@ -212,9 +212,9 @@ fetchATTAINS <- function(data, type = NULL) {
 #' Link catchment-based ATTAINS assessment unit data to Water Quality Portal observations, often imported via `TADA_DataRetrieval()`. This function returns the same raw objects that are mapped in `TADA_ViewATTAINS()`.
 #' 
 #' @param data A dataframe created by `TADA_DataRetrieval()` or the {sf} equivalent made by `TADA_MakeSpatial()`.
-#' @param return Whether to add the associated ATTAINS_catchments, ATTAINS_lines, ATTAINS_points, and ATTAINS_polygons shapefile objects into your Global Environment. TRUE (yes, return) or FALSE (no, do not return). All ATTAINS features are in WGS84 (crs = 4326).
+#' @param return Whether to return the associated ATTAINS_catchments, ATTAINS_lines, ATTAINS_points, and ATTAINS_polygons shapefile objects. TRUE (yes, return) or FALSE (no, do not return). All ATTAINS features are in WGS84 (crs = 4326).
 #' 
-#' @return The original `TADA_DataRetrieval()` dataframe with additional columns associated with the ATTAINS assessment unit data. 
+#' @return A modified `TADA_DataRetrieval()` dataframe with additional columns associated with the ATTAINS assessment unit data. Or, if return = TRUE, a list containing that same data frame plus the raw ATTAINS features associated with those observations.
 #' 
 #' @seealso [TADA_DataRetrieval()]
 #' @seealso [TADA_MakeSpatial()]
@@ -229,19 +229,34 @@ fetchATTAINS <- function(data, type = NULL) {
 #'                                characteristicName = "pH",
 #'                                statecode = "NV",
 #'                                applyautoclean = TRUE)
-#'                                  
-#'tada_attains <- TADA_GetATTAINS(data = tada_data, return = TRUE)
+#'
+#'tada_attains <- TADA_GetATTAINS(data = tada_data, return = FALSE)
+#'tada_attains_list <- TADA_GetATTAINS(data = tada_data, return = TRUE)
 #' }
 
-TADA_GetATTAINS <- function(data, return = FALSE){
+TADA_GetATTAINS <- function(data, return = TRUE){
   
-  if(nrow(data) == 0){
+  if (all(c("ATTAINS.organizationid", "ATTAINS.submissionid", "ATTAINS.hasprotectionplan",
+            "ATTAINS.assessmentunitname", "ATTAINS.nhdplusid", "ATTAINS.tas303d",                                                  
+            "ATTAINS.isthreatened", "ATTAINS.state", "ATTAINS.on303dlist",                                               
+            "ATTAINS.organizationname", "ATTAINS.region", "ATTAINS.Shape_Length",                                             
+            "ATTAINS.reportingcycle", "ATTAINS.assmnt_joinkey", "ATTAINS.hastmdl",                                                  
+            "ATTAINS.orgtype", "ATTAINS.permid_joinkey", "ATTAINS.catchmentistribal",                                        
+            "ATTAINS.ircategory", "ATTAINS.waterbodyreportlink", "ATTAINS.assessmentunitidentifier",                                 
+            "ATTAINS.overallstatus", "ATTAINS.isassessed", "ATTAINS.isimpaired",                                               
+            "ATTAINS.has4bplan", "ATTAINS.huc12", "ATTAINS.hasalternativeplan",                                      
+            "ATTAINS.visionpriority303d", "ATTAINS.areasqkm", "ATTAINS.catchmentareasqkm",                                       
+            "ATTAINS.catchmentstatecode", "ATTAINS.catchmentresolution", "ATTAINS.Shape_Area") %in% colnames(data))){
     
-    print("Your Water Quality Portal dataframe has no observations. Returning an empty dataframe.")
+    stop("You data has already been joined with ATTAINS data.")
+    
+  } else if(nrow(data) == 0){
+    
+    print("Your Water Quality Portal dataframe has no observations. Returning an empty dataframe with empty ATTAINS features.")
     
     # if no WQP observations, return a modified `data` with empty ATTAINS-related columns:
     no_WQP_data <- data %>%
-      dplyr::mutate("ATTAINS.organizationid" = NA, "ATTAINS.submissionid" = NA, "ATTAINS.hasprotectionplan" = NA,
+      dplyr::mutate("index", "ATTAINS.organizationid" = NA, "ATTAINS.submissionid" = NA, "ATTAINS.hasprotectionplan" = NA,
                     "ATTAINS.assessmentunitname" = NA, "ATTAINS.nhdplusid" = NA, "ATTAINS.tas303d" = NA,                                                  
                     "ATTAINS.isthreatened" = NA, "ATTAINS.state" = NA, "ATTAINS.on303dlist" = NA,                                               
                     "ATTAINS.organizationname" = NA, "ATTAINS.region" = NA, "ATTAINS.Shape_Length" = NA,                                             
@@ -253,129 +268,163 @@ TADA_GetATTAINS <- function(data, return = FALSE){
                     "ATTAINS.visionpriority303d" = NA, "ATTAINS.areasqkm" = NA, "ATTAINS.catchmentareasqkm" = NA,                                       
                     "ATTAINS.catchmentstatecode" = NA, "ATTAINS.catchmentresolution" = NA, "ATTAINS.Shape_Area" = NA)
     
-    return(no_WQP_data)
+    if(return == TRUE){
+      ATTAINS_catchments <- NULL
+      ATTAINS_lines <- NULL
+      ATTAINS_points <- NULL
+      ATTAINS_polygons <- NULL
+      
+      return(list("TADA_with_ATTAINS" = no_WQP_data,
+                  "ATTAINS_catchments" = ATTAINS_catchments,
+                  "ATTAINS_points" = ATTAINS_points,
+                  "ATTAINS_lines" = ATTAINS_lines,
+                  "ATTAINS_polygons" = ATTAINS_polygons))} else {return(no_WQP_data)}
     
   }
+
+suppressMessages(suppressWarnings({
   
-  suppressMessages(suppressWarnings({
-    
-    sf::sf_use_s2(FALSE)
-    
-    # If data is already spatial, just make sure it is in the right CRS
-    # and add an index as the WQP observations' unique IDs...
-    if (!is.null(data) & inherits(data, "sf")) {
-      if(sf::st_crs(data)$epsg != 4326){
-        TADA_DataRetrieval_data <- data %>%
-          sf::st_transform(4326) %>%
-          tibble::rowid_to_column(var = "index")
-      } else {
-        TADA_DataRetrieval_data <- data %>%
-          tibble::rowid_to_column(var = "index")
-      }
-      
-    } else {
-      # ... Otherwise transform into a spatial object then do the same thing:
+  sf::sf_use_s2(FALSE)
+  
+  # If data is already spatial, just make sure it is in the right CRS
+  # and add unique WQP ID for identifying obs with more than one ATTAINS assessment unit
+  
+  if (!is.null(data) & inherits(data, "sf")) {
+    if(sf::st_crs(data)$epsg != 4326){
       TADA_DataRetrieval_data <- data %>%
-        #convert dataframe to a spatial object
-        TADA_MakeSpatial(data = ., crs = 4326) %>%
-        # add unique WQP ID for identifying obs with more than one ATTAINS assessment unit
+        sf::st_transform(4326) %>%
+        tibble::rowid_to_column(var = "index")
+    } else {
+      TADA_DataRetrieval_data <- data %>%
         tibble::rowid_to_column(var = "index")
     }
     
-    # grab the ATTAINS catchments within our WQP bbox:
-    nearby_catchments <- NULL
-    # (Wrapped with "try" because it is possible that no ATTAINS data exists in the bbox.)
-    try(nearby_catchments <- fetchATTAINS(type = "catchments", data = TADA_DataRetrieval_data) %>%
-          # remove unnecessary columns:
-          dplyr::select(-c(OBJECTID, GLOBALID)) %>%
-          # select only catchments that have WQP observations in them:
-          .[TADA_DataRetrieval_data, ] %>%
-          # add prefix "ATTAINS" to ATTAINS data
-          dplyr::rename_with(~ paste0("ATTAINS.", .), dplyr::everything()) %>%
-          # get rid of dupes (as a precaution)
-          dplyr::distinct(.keep_all = TRUE),
-        silent = TRUE)
+  } else {
+    # ... Otherwise transform into a spatial object then do the same thing:
+    TADA_DataRetrieval_data <- data %>%
+      #convert dataframe to a spatial object
+      TADA_MakeSpatial(data = ., crs = 4326) %>%
+      # add unique WQP ID for identifying obs with more than one ATTAINS assessment unit
+      tibble::rowid_to_column(var = "index")
+  }
+}))
+
+# grab the ATTAINS catchments within our WQP bbox:
+nearby_catchments <- NULL
+# (Wrapped with "try" because it is possible that no ATTAINS data exists in the bbox.)
+try(nearby_catchments <- fetchATTAINS(type = "catchments", data = TADA_DataRetrieval_data) %>%
+      # remove unnecessary columns:
+      dplyr::select(-c(OBJECTID, GLOBALID)) %>%
+      # select only catchments that have WQP observations in them:
+      .[TADA_DataRetrieval_data, ] %>%
+      # add prefix "ATTAINS" to ATTAINS data
+      dplyr::rename_with(~ paste0("ATTAINS.", .), dplyr::everything()) %>%
+      # get rid of dupes (as a precaution)
+      dplyr::distinct(.keep_all = TRUE),
+    silent = TRUE)
+
+# if no ATTAINS data, return original dataframe with empty ATTAINS columns:
+if(is.null(nearby_catchments)){
+  
+  print("There are no ATTAINS features associated with these WQP observations. Returning original dataframe with empty ATTAINS columns and empty ATTAINS geospatial features.")
+  
+  # return a modified `data` with empty ATTAINS-related columns:
+  no_ATTAINS_data <- data %>%
+    dplyr::mutate("ATTAINS.organizationid" = NA, "ATTAINS.submissionid" = NA, "ATTAINS.hasprotectionplan" = NA,
+                  "ATTAINS.assessmentunitname" = NA, "ATTAINS.nhdplusid" = NA, "ATTAINS.tas303d" = NA,                                                  
+                  "ATTAINS.isthreatened" = NA, "ATTAINS.state" = NA, "ATTAINS.on303dlist" = NA,                                               
+                  "ATTAINS.organizationname" = NA, "ATTAINS.region" = NA, "ATTAINS.Shape_Length" = NA,                                             
+                  "ATTAINS.reportingcycle" = NA, "ATTAINS.assmnt_joinkey" = NA, "ATTAINS.hastmdl" = NA,                                                  
+                  "ATTAINS.orgtype" = NA, "ATTAINS.permid_joinkey" = NA, "ATTAINS.catchmentistribal" = NA,                                        
+                  "ATTAINS.ircategory" = NA, "ATTAINS.waterbodyreportlink" = NA, "ATTAINS.assessmentunitidentifier" = NA,                                 
+                  "ATTAINS.overallstatus" = NA, "ATTAINS.isassessed" = NA, "ATTAINS.isimpaired" = NA,                                               
+                  "ATTAINS.has4bplan" = NA, "ATTAINS.huc12" = NA, "ATTAINS.hasalternativeplan" = NA,                                      
+                  "ATTAINS.visionpriority303d" = NA, "ATTAINS.areasqkm" = NA, "ATTAINS.catchmentareasqkm" = NA,                                       
+                  "ATTAINS.catchmentstatecode" = NA, "ATTAINS.catchmentresolution" = NA, "ATTAINS.Shape_Area" = NA) %>%
+    tibble::rowid_to_column(var = "index")
+  
+  if(return == TRUE){
+  
+  ATTAINS_catchments <- NULL
+  ATTAINS_lines <- NULL
+  ATTAINS_points <- NULL
+  ATTAINS_polygons <- NULL
+  
+  return(list("TADA_with_ATTAINS" = no_ATTAINS_data,
+              "ATTAINS_catchments" = ATTAINS_catchments,
+              "ATTAINS_points" = ATTAINS_points,
+              "ATTAINS_lines" = ATTAINS_lines,
+              "ATTAINS_polygons" = ATTAINS_polygons))
+  } else {
     
-    # if no ATTAINS data, return original dataframe with empty ATTAINS columns:
-    if(is.null(nearby_catchments)){
-      
-      print("There are no ATTAINS features associated with these WQP observations. Returning original dataframe with empty ATTAINS columns.")
-      
-      # return a modified `data` with empty ATTAINS-related columns:
-      no_ATTAINS_data <- data %>%
-        dplyr::mutate("ATTAINS.organizationid" = NA, "ATTAINS.submissionid" = NA, "ATTAINS.hasprotectionplan" = NA,
-                      "ATTAINS.assessmentunitname" = NA, "ATTAINS.nhdplusid" = NA, "ATTAINS.tas303d" = NA,                                                  
-                      "ATTAINS.isthreatened" = NA, "ATTAINS.state" = NA, "ATTAINS.on303dlist" = NA,                                               
-                      "ATTAINS.organizationname" = NA, "ATTAINS.region" = NA, "ATTAINS.Shape_Length" = NA,                                             
-                      "ATTAINS.reportingcycle" = NA, "ATTAINS.assmnt_joinkey" = NA, "ATTAINS.hastmdl" = NA,                                                  
-                      "ATTAINS.orgtype" = NA, "ATTAINS.permid_joinkey" = NA, "ATTAINS.catchmentistribal" = NA,                                        
-                      "ATTAINS.ircategory" = NA, "ATTAINS.waterbodyreportlink" = NA, "ATTAINS.assessmentunitidentifier" = NA,                                 
-                      "ATTAINS.overallstatus" = NA, "ATTAINS.isassessed" = NA, "ATTAINS.isimpaired" = NA,                                               
-                      "ATTAINS.has4bplan" = NA, "ATTAINS.huc12" = NA, "ATTAINS.hasalternativeplan" = NA,                                      
-                      "ATTAINS.visionpriority303d" = NA, "ATTAINS.areasqkm" = NA, "ATTAINS.catchmentareasqkm" = NA,                                       
-                      "ATTAINS.catchmentstatecode" = NA, "ATTAINS.catchmentresolution" = NA, "ATTAINS.Shape_Area" = NA)
-      
-      return(no_ATTAINS_data)
-      
-    } else {
-      # ... otherwise link WQP features to the ATTAINS catchment feature(s) they land in:
-      TADA_with_ATTAINS <- TADA_DataRetrieval_data %>%
-        # left join = TRUE to preserve all observations (with or without ATTAINS features):
-        sf::st_join(., nearby_catchments, left = TRUE)
-      
-      if(return == TRUE){
-        
-        # ... otherwise link WQP features to the ATTAINS catchment feature(s) they land in:
-        TADA_data <- TADA_DataRetrieval_data %>%
-          # left join = TRUE to preserve all observations (with or without ATTAINS features):
-          sf::st_join(., nearby_catchments, left = TRUE)
-        
-        # CATCHMENT FEATURES 
-        # use original catchment pull, but return column names to original
-        ATTAINS_catchments <<- nearby_catchments
-        colnames(ATTAINS_catchments) <- gsub("ATTAINS.", "", colnames(ATTAINS_catchments)) 
-        # due to the rename, must re-set geometry column:
-        sf::st_geometry(ATTAINS_catchments) <- "geometry"
-        
-        # POINT FEATURES - try to pull point AU data if it exists. Otherwise, move on...
-        try(ATTAINS_points <<- fetchATTAINS(type = "points", data = TADA_DataRetrieval_data) %>%
-              # subset to only ATTAINS point features in the same NHD HR catchments as WQP observations
-              .[nearby_catchments,] %>%
-              # make sure no duplicate features exist
-              dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
-            silent = TRUE)
-        
-        # LINE FEATURES - try to pull line AU data if it exists. Otherwise, move on...
-        try(ATTAINS_lines <<- fetchATTAINS(type = "lines", data = TADA_DataRetrieval_data) %>%
-              # subset to only ATTAINS line features in the same NHD HR catchments as WQP observations
-              .[nearby_catchments,] %>%
-              # make sure no duplicate line features exist
-              dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
-            silent = TRUE)
-        
-        # POLYGON FEATURES - try to pull polygon AU data if it exists. Otherwise, move on...
-        try(ATTAINS_polygons <<- fetchATTAINS(type = "polygons", data = TADA_DataRetrieval_data) %>%
-              # subset to only ATTAINS polygon features in the same NHD HR catchments as WQP observations
-              .[nearby_catchments,] %>%
-              # make sure no duplicate polygon features exist
-              dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
-            silent = TRUE)
-      }
-      
-      return(TADA_with_ATTAINS)
-      
+    return(no_ATTAINS_data)}
+  } else {
+  
+  suppressMessages(suppressWarnings({
+    # ... otherwise link WQP features to the ATTAINS catchment feature(s) they land in:
+    TADA_with_ATTAINS <- TADA_DataRetrieval_data %>%
+      # left join = TRUE to preserve all observations (with or without ATTAINS features):
+      sf::st_join(., nearby_catchments, left = TRUE)
+    
+    # ... otherwise link WQP features to the ATTAINS catchment feature(s) they land in:
+    TADA_data <- TADA_DataRetrieval_data %>%
+      # left join = TRUE to preserve all observations (with or without ATTAINS features):
+      sf::st_join(., nearby_catchments, left = TRUE)
+    
+    if(return == FALSE){
+      return(TADA_data)
     }
     
+    # CATCHMENT FEATURES 
+    # use original catchment pull, but return column names to original
+    ATTAINS_catchments <- nearby_catchments
+    colnames(ATTAINS_catchments) <- gsub("ATTAINS.", "", colnames(ATTAINS_catchments)) 
+    # due to the rename, must re-set geometry column:
+    sf::st_geometry(ATTAINS_catchments) <- "geometry"
+    
+    # POINT FEATURES - try to pull point AU data if it exists. Otherwise, move on...
+    ATTAINS_points <- NULL
+    try(ATTAINS_points <- fetchATTAINS(type = "points", data = TADA_DataRetrieval_data) %>%
+          # subset to only ATTAINS point features in the same NHD HR catchments as WQP observations
+          .[nearby_catchments,] %>%
+          # make sure no duplicate features exist
+          dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
+        silent = TRUE)
+    
+    # LINE FEATURES - try to pull line AU data if it exists. Otherwise, move on...
+    ATTAINS_lines <- NULL
+    try(ATTAINS_lines <- fetchATTAINS(type = "lines", data = TADA_DataRetrieval_data) %>%
+          # subset to only ATTAINS line features in the same NHD HR catchments as WQP observations
+          .[nearby_catchments,] %>%
+          # make sure no duplicate line features exist
+          dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
+        silent = TRUE)
+    
+    # POLYGON FEATURES - try to pull polygon AU data if it exists. Otherwise, move on...
+    ATTAINS_polygons <- NULL
+    try(ATTAINS_polygons <- fetchATTAINS(type = "polygons", data = TADA_DataRetrieval_data) %>%
+          # subset to only ATTAINS polygon features in the same NHD HR catchments as WQP observations
+          .[nearby_catchments,] %>%
+          # make sure no duplicate polygon features exist
+          dplyr::distinct(assessmentunitidentifier, .keep_all = TRUE),
+        silent = TRUE)
   }))
   
+  return(list("TADA_with_ATTAINS" = TADA_with_ATTAINS,
+              "ATTAINS_catchments" = ATTAINS_catchments,
+              "ATTAINS_points" = ATTAINS_points,
+              "ATTAINS_lines" = ATTAINS_lines,
+              "ATTAINS_polygons" = ATTAINS_polygons))
+}
+
 }
 
 
 #' TADA_ViewATTAINS
 #' 
-#' Finds ATTAINS assessment unit data within the same catchment as water quality observations imported via `TADA_DataRetrieval()`.
-#' 
-#' @param data A dataframe, created by `TADA_DataRetrieval()`. 
+#' Visualizes the data returned from TADA_GetATTAINS if return was set to TRUE. 
+#'
+#' @param ATTAINS_list A list containing a data frame and ATTAINS shapefile objects created by `TADA_GetATTAINS()` with the return argument set to TRUE. 
 #' 
 #' @return A leaflet map visualizing the TADA water quality observations and the linked ATTAINS assessment units. All maps are in WGS84.
 #' 
@@ -391,11 +440,25 @@ TADA_GetATTAINS <- function(data, return = FALSE){
 #'                                characteristicName = "pH",
 #'                                statecode = "NV",
 #'                                applyautoclean = TRUE)
+#'                                
+#'attains_data <- TADA_GetATTAINS(data = tada_data, return = TRUE)                               
 #'                                  
-#'TADA_ViewATTAINS(data = tada_data)
+#'TADA_ViewATTAINS(ATTAINS_list = attains_data)
 #' }
 
-TADA_ViewATTAINS <- function(data){
+TADA_ViewATTAINS <- function(ATTAINS_list){
+  
+  if(!all(c("TADA_with_ATTAINS", "ATTAINS_catchments", "ATTAINS_points",
+            "ATTAINS_lines", "ATTAINS_polygons") %in% names(ATTAINS_list))) {
+    stop("Your ATTAINS_list was not produced from `TADA_GetATTAINS()`. Please
+         create your list of ATTAINS features using `TADA_GetATTAINS()`.")
+  }
+  
+  data <- ATTAINS_list[["TADA_with_ATTAINS"]]
+  ATTAINS_catchments <- ATTAINS_list[["ATTAINS_catchments"]]
+  ATTAINS_points <- ATTAINS_list[["ATTAINS_points"]]
+  ATTAINS_lines <- ATTAINS_list[["ATTAINS_lines"]]
+  ATTAINS_polygons <- ATTAINS_list[["ATTAINS_polygons"]]
   
   if(nrow(data) == 0){stop("Your WQP dataframe has no observations.")}
   
@@ -409,48 +472,17 @@ TADA_ViewATTAINS <- function(data){
      !"ActivityStartDate" %in% colnames(data) |
      !"OrganizationIdentifier" %in% colnames(data)) {
     
-    stop("The dataframe does not contain WQP-style column names.")
+    stop("Your dataframe does not contain WQP-style column names.")
+    
   }
   
   suppressMessages(suppressWarnings({
     
     sf::sf_use_s2(FALSE)
     
-    # If data is already spatial, just make sure it is in the right CRS
-    # and add an index...
-    if (!is.null(data) & inherits(data, "sf")) {
-      TADA_DataRetrieval_data <- data %>%
-        sf::st_transform(4326) %>%
-        tibble::rowid_to_column(var = "index")
-    } else {
-      #... otherwise, make it spatial then do the same thing.
-      TADA_DataRetrieval_data <- data %>%
-        TADA_MakeSpatial(data = ., crs = 4326) %>%
-        # add index for identifying obs with more than one ATTAINS assessment unit
-        tibble::rowid_to_column(var = "index")
-    }
-    
-    nearby_catchments <- NULL
-    # grab the ATTAINS catchment-level data:
-    try(nearby_catchments <- fetchATTAINS(type = "catchments", data = TADA_DataRetrieval_data) %>%
-          # remove unnecessary columns:
-          dplyr::select(-c(OBJECTID, GLOBALID)) %>%
-          # subset catchments to only those with user-supplied WQP observations in them:
-          .[TADA_DataRetrieval_data,] %>%
-          # tack on ATTAINS to the beginning of every column name:
-          dplyr::rename_with(~ paste0("ATTAINS.", .), dplyr::everything()),
-        silent = TRUE)
-    
-    if(is.null(nearby_catchments) == TRUE) {
-      stop("There are no ATTAINS features associated with these WQP observations.")
-    }
-    
-    
-    # join TADA sf features to the ATTAINS catchment feature(s) they land on:
-    TADA_with_ATTAINS <- TADA_DataRetrieval_data %>%
-      sf::st_join(., nearby_catchments) %>%
-      # drop spatial:
-      sf::st_drop_geometry() 
+    # if data was spatial, remove for downstream leaflet dev:
+    try(data <- data %>%
+          sf::st_drop_geometry(), silent = TRUE)
     
     colors = data.frame(
       overallstatus = c("Not Supporting", "Fully Supporting", "Not Assessed"),
@@ -459,37 +491,25 @@ TADA_ViewATTAINS <- function(data){
       priority = c(1, 2, 3))
     
     # POINT FEATURES - try to pull point AU data if it exists. Otherwise, move on...
-    points <- NULL
-    try(points <- fetchATTAINS(type = "points", data = TADA_DataRetrieval_data) %>%
-          .[nearby_catchments,],
-        silent = TRUE)
-    try(points_mapper <- points %>%
+    try(points_mapper <- ATTAINS_points %>%
           dplyr::left_join(., colors, by = "overallstatus") %>%
           dplyr::mutate(type = "Point Feature"),
         silent = TRUE)
     
     # LINE FEATURES - try to pull line AU data if it exists. Otherwise, move on...
-    lines <- NULL
-    try(lines <- fetchATTAINS(type = "lines", data = TADA_DataRetrieval_data) %>%
-          .[nearby_catchments,],
-        silent = TRUE)
-    try(lines_mapper <- lines %>%
+    try(lines_mapper <- ATTAINS_lines %>%
           dplyr::left_join(., colors, by = "overallstatus") %>%
           dplyr::mutate(type = "Line Feature"),
         silent = TRUE)
     
     # POLYGON FEATURES - try to pull polygon AU data if it exists. Otherwise, move on...
-    polygons <- NULL
-    try(polygons <- fetchATTAINS(type = "polygons", data = TADA_DataRetrieval_data) %>%
-          .[nearby_catchments,],
-        silent = TRUE)
-    try(polygons_mapper <- polygons %>%
+    try(polygons_mapper <- ATTAINS_polygons %>%
           dplyr::left_join(., colors, by = "overallstatus") %>%
           dplyr::mutate(type = "Polygon Feature"),
         silent = TRUE)
     
     # Develop WQP site stats (e.g. count of observations, parameters, per site)
-    sumdat <- TADA_with_ATTAINS %>%
+    sumdat <- data %>%
       dplyr::group_by(MonitoringLocationIdentifier, MonitoringLocationName, LatitudeMeasure, LongitudeMeasure) %>% 
       dplyr::summarize(Sample_Count = length(unique(ResultIdentifier)), 
                        Visit_Count = length(unique(ActivityStartDate)), 
@@ -515,16 +535,16 @@ TADA_ViewATTAINS <- function(data){
       leaflet::addLegend(position = "bottomright",
                          colors = c("#DC851E", "#059FA4", "#A1A522", "black", NA),
                          labels = c("ATTAINS: Not Supporting", "ATTAINS: Supporting", "ATTAINS: Not Assessed", "Water Quality Observation(s)",
-                                    "NHD HR catchments containing water quality observations are represented as clear polygons with black outlines."),
+                                    "NHDPlus HR catchments containing water quality observations are represented as clear polygons with black outlines."),
                          opacity = 1,
                          title = "Legend")
     
     # Add ATTAINS catchment outlines (if they exist):
     try(map <- map %>%
-          leaflet::addPolygons(data = nearby_catchments,
+          leaflet::addPolygons(data = ATTAINS_catchments,
                                color = "black",
                                weight = 1, fillOpacity = 0,
-                               popup = paste0("NHDPlus HR Catchment ID: ", nearby_catchments$ATTAINS.nhdplusid)),
+                               popup = paste0("NHDPlus HR Catchment ID: ", ATTAINS_catchments$nhdplusid)),
         silent = TRUE)
     
     # Add ATTAINS polygon features (if they exist):
@@ -579,7 +599,7 @@ TADA_ViewATTAINS <- function(data){
                                                    "<br> ATTAINS Assessment Unit(s): ", sumdat$ATTAINS_AUs)),
         silent = TRUE)
     
-    if(is.null(lines) == TRUE & is.null(points) == TRUE & is.null(polygons) == TRUE) {
+    if(is.null(ATTAINS_lines) & is.null(ATTAINS_points) & is.null(ATTAINS_polygons)) {
       print("No ATTAINS data associated with this Water Quality Portal data.")
     }
     

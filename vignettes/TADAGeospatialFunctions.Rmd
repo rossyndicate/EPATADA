@@ -153,9 +153,9 @@ TADA_spatial <- TADA_MakeSpatial(data = TADA_dataframe, crs = 4326)
 ```
 
 This new spatial object is identical to the original TADA dataset, but
-now includes a "geometry" column, which allows for mapping and
-additional geospatial capabilities. Enter `?TADA_MakeSpatial` into the
-console to review another example of this function in use and additional
+now includes a "geometry" column that allows for mapping and additional
+geospatial capabilities. Enter `?TADA_MakeSpatial` into the console to
+review another example of this function in use and additional
 information.
 
 ```{r}
