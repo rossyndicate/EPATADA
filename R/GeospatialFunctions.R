@@ -255,7 +255,9 @@ TADA_GetATTAINS <- function(data, return = TRUE){
     
     stop("You data has already been joined with ATTAINS data.")
     
-  } else if(nrow(data) == 0){
+  }
+  
+  if(nrow(data) == 0){
     
     print("Your Water Quality Portal dataframe has no observations. Returning an empty dataframe with empty ATTAINS features.")
     
