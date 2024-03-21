@@ -29,14 +29,14 @@ test_that(desc = "The CRS in the test data frame is the same as the input",
             test_df1 <- TADA_MakeSpatial(data = TADA_dataframe, crs = 4326) 
             test_df2 <- TADA_MakeSpatial(data = TADA_dataframe, crs = 4269) 
             
-            expect_true(gsub("\\D", "", st_crs(test_df1)$epsg) == as.character(4326))
-            expect_true(gsub("\\D", "", st_crs(test_df2)$epsg) == as.character(4269))
+            expect_true(gsub("\\D", "", sf::st_crs(test_df1)$epsg) == as.character(4326))
+            expect_true(gsub("\\D", "", sf::st_crs(test_df2)$epsg) == as.character(4269))
           })
 
 test_that(desc = "The geometry types in the data frame are points",
           code = {
             test_df <- TADA_MakeSpatial(data = TADA_dataframe) 
-            geometry_types <- st_geometry_type(test_df)
+            geometry_types <- sf::st_geometry_type(test_df)
             valid_geometry_types <- "POINT"
             expect_true(all(geometry_types %in% valid_geometry_types))
           })
@@ -61,7 +61,7 @@ test_that(desc = "The structures of the TADA_dataframe and the output data frame
 
 test_that(desc = "TADA_MakeSpatial() errors if the input dataframe does not contain WQP-style latitude and longitude data",
           code = {
-            expect_error(TADA_MakeSpatial(data = tibble(sample = NA, .rows = 0))) # fails if I include the error message text
+            expect_error(TADA_MakeSpatial(data = tibble::tibble(sample = NA, .rows = 0))) # fails if I include the error message text
           })
 
 test_that(desc = "TADA_MakeSpatial() errors if the input dataframe is already a spatial object",
@@ -81,11 +81,11 @@ test_that(desc = "TADA_MakeSpatial() errors if the input dataframe is already a 
 
 ## make an index column for this test
 TADA_dataframe_index <- TADA_dataframe %>%
-  rowid_to_column(var = "index")
+  tibble::rowid_to_column(var = "index")
 
 ## generate sample dfs outside of testing fxn
 test <- TADA_MakeSpatial(data = TADA_dataframe_index, crs = 4326)
-test_sans_geom <- st_drop_geometry(test)
+test_sans_geom <- sf::st_drop_geometry(test)
 
 ## test if og df and test_sans_geom are identical
 identical(TADA_dataframe_index, test) # FALSE
@@ -93,10 +93,10 @@ identical(TADA_dataframe_index, test_sans_geom) # FALSE
 
 ## Repeat the test after sorting the index
 test_sorted <- test %>% 
-  arrange(index) 
+  plyr::arrange(index) 
 
 test_sans_geom_sorted <- test_sans_geom %>% 
-  arrange(index)
+  plyr::arrange(index)
 
 identical(TADA_dataframe_index, test_sorted) # FALSE
 identical(TADA_dataframe_index, test_sans_geom_sorted) # TRUE ***
@@ -106,7 +106,7 @@ rm(list = c("test", "test_sans_geom", "test_sorted", "test_sans_geom_sorted", "T
 # fetch_ATTAINS ----
 test_that(desc = "fetchATTAINS handles valid input data", 
           code = {
-            valid_data <- st_sf(geometry = st_sfc(st_point(c(0, 0))), crs = 4326)
+            valid_data <- sf::st_sf(geometry = sf::st_sfc(sf::st_point(c(0, 0))), crs = 4326)
             result <- fetchATTAINS(data = valid_data, type = "points")
             expect_false(is.null(result))
             })
@@ -118,7 +118,7 @@ test_that(desc = "fetchATTAINS handles missing input data",
 
 test_that(desc = "fetchATTAINS handles missing type input",
           code = {
-            valid_data <- st_sf(geometry = st_sfc(st_point(c(0, 0))), crs = 4326)
+            valid_data <- sf::st_sf(geometry = sf::st_sfc(sf::st_point(c(0, 0))), crs = 4326)
             expect_error(fetchATTAINS(data = valid_data, type = NULL)) # when I incorporate the error message this test fails
           })
 
@@ -147,7 +147,7 @@ test_that(desc = "TADA_GetATTAINS(return = TRUE)[[1]] == TADA_GetATTAINS(return 
 
 test_that(desc = "An empty df gets returned if there are no observations in the input df, ",
           code = {
-            test <- TADA_GetATTAINS(data = tibble(sample = NA, .rows = 0), FALSE)
+            test <- TADA_GetATTAINS(data = tibble::tibble(sample = NA, .rows = 0), FALSE)
             expect_true(nrow(test) == 0)
           })
 
@@ -159,7 +159,7 @@ test_that(desc = "An input that was not generated from `TADA_GetATTAINS()` gets 
 
 test_that(desc = "An input with no observations gets rejected",
           code = {
-            expect_error(TADA_ViewATTAINS(data = tibble(sample = NA, .rows = 0), FALSE))
+            expect_error(TADA_ViewATTAINS(data = tibble::tibble(sample = NA, .rows = 0), FALSE))
           })
 
 # This needs to get tested after GeospatialFunctions.R L479 gets fixed
